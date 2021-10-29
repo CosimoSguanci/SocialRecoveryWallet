@@ -36,7 +36,7 @@ contract SocialRecoveryWallet {
     
     mapping (uint => mapping (address => bool)) public changeSpenderRequestsConfirmations;
     mapping (uint => ChangeSpenderRequest) public changeSpenderRequests;
-    mapping (uint => address) public newSpenders;
+    //mapping (uint => address) public newSpenders;
     uint public changeSpenderRequestCount;
 
     mapping (address => bool) public isGuardian;
@@ -254,7 +254,7 @@ contract SocialRecoveryWallet {
 
         changeSpenderRequestsConfirmations[changeSpenderRequestId][msg.sender] = true;
         //Confirmation(msg.sender, transactionId);
-        executeChangeSpenderRequest(changeSpenderRequestId, newSpenders[changeSpenderRequestId]);
+        executeChangeSpenderRequest(changeSpenderRequestId, changeSpenderRequests[changeSpenderRequestId].newSpender);
     } 
 
     /// @dev Allows an owner to submit and confirm a transaction.
