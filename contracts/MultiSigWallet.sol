@@ -14,24 +14,26 @@ contract MultiSigWallet {
     event Execution(uint indexed transactionId);
     event ExecutionFailure(uint indexed transactionId);
     event Deposit(address indexed sender, uint value);
-    event OwnerAddition(address indexed owner);
-    event OwnerRemoval(address indexed owner);
+    event GuardianAddition(address indexed guardian);
+    event GuardianRemoval(address indexed guardian);
     event RequirementChange(uint required);
 
     /*
      *  Constants
      */
-    uint constant public MAX_OWNER_COUNT = 50;
+    uint constant public MAX_GUARDIAN_COUNT = 50;
 
     /*
      *  Storage
      */
     mapping (uint => Transaction) public transactions;
     mapping (uint => mapping (address => bool)) public confirmations;
-    mapping (address => bool) public isOwner;
-    address[] public owners;
+    mapping (address => bool) public isGuardian;
+    address[] public guardians;
     uint public required;
     uint public transactionCount;
+
+    address public spender;
 
     struct Transaction {
         address destination;
@@ -48,13 +50,13 @@ contract MultiSigWallet {
         _;
     }
 
-    modifier ownerDoesNotExist(address owner) {
-        require(!isOwner[owner]);
+    modifier guardianDoesNotExist(address guardian) {
+        require(!isGuardian[guardian]);
         _;
     }
 
-    modifier ownerExists(address owner) {
-        require(isOwner[owner]);
+    modifier guardianExists(address guardian) {
+        require(isGuardian[guardian]);
         _;
     }
 
@@ -63,13 +65,13 @@ contract MultiSigWallet {
         _;
     }
 
-    modifier confirmed(uint transactionId, address owner) {
-        require(confirmations[transactionId][owner]);
+    modifier confirmed(uint transactionId, address guardian) {
+        require(confirmations[transactionId][guardian]);
         _;
     }
 
-    modifier notConfirmed(uint transactionId, address owner) {
-        require(!confirmations[transactionId][owner]);
+    modifier notConfirmed(uint transactionId, address guardian) {
+        require(!confirmations[transactionId][guardian]);
         _;
     }
 
@@ -83,11 +85,11 @@ contract MultiSigWallet {
         _;
     }
 
-    modifier validRequirement(uint ownerCount, uint _required) {
-        require(ownerCount <= MAX_OWNER_COUNT
-            && _required <= ownerCount
+    modifier validRequirement(uint guardianCount, uint _required) {
+        require(guardianCount <= MAX_GUARDIAN_COUNT
+            && _required <= guardianCount
             && _required != 0
-            && ownerCount != 0);
+            && guardianCount != 0);
         _;
     }
 
@@ -103,71 +105,73 @@ contract MultiSigWallet {
      * Public functions
      */
     /// @dev Contract constructor sets initial owners and required number of confirmations.
-    /// @param _owners List of initial owners.
+    /// @param _guardians List of initial owners.
     /// @param _required Number of required confirmations.
-    function MultiSigWallet(address[] _owners, uint _required)
+    function MultiSigWallet(address[] _guardians, uint _required)
         public
-        validRequirement(_owners.length, _required)
+        validRequirement(_guardians.length, _required)
     {
-        for (uint i=0; i<_owners.length; i++) {
-            require(!isOwner[_owners[i]] && _owners[i] != 0);
-            isOwner[_owners[i]] = true;
+        spender = msg.sender;
+        
+        for (uint i=0; i<_guardians.length; i++) {
+            require(!isGuardian[_guardians[i]] && _guardians[i] != 0);
+            isGuardian[_guardians[i]] = true;
         }
-        owners = _owners;
+        guardians = _guardians;
         required = _required;
     }
 
     /// @dev Allows to add a new owner. Transaction has to be sent by wallet.
-    /// @param owner Address of new owner.
-    function addOwner(address owner)
+    /// @param guardian Address of new owner.
+    function addGuardian(address guardian)
         public
         onlyWallet
-        ownerDoesNotExist(owner)
-        notNull(owner)
-        validRequirement(owners.length + 1, required)
+        guardianDoesNotExist(guardian)
+        notNull(guardian)
+        validRequirement(guardians.length + 1, required)
     {
-        isOwner[owner] = true;
-        owners.push(owner);
-        OwnerAddition(owner);
+        isGuardian[guardian] = true;
+        guardians.push(guardian);
+        GuardianAddition(guardian);
     }
 
     /// @dev Allows to remove an owner. Transaction has to be sent by wallet.
-    /// @param owner Address of owner.
-    function removeOwner(address owner)
+    /// @param guardian Address of owner.
+    function removeGuardian(address guardian)
         public
         onlyWallet
-        ownerExists(owner)
+        guardianExists(guardian)
     {
-        isOwner[owner] = false;
-        for (uint i=0; i<owners.length - 1; i++)
-            if (owners[i] == owner) {
-                owners[i] = owners[owners.length - 1];
+        isGuardian[guardian] = false;
+        for (uint i=0; i<guardians.length - 1; i++)
+            if (guardians[i] == guardian) {
+                guardians[i] = guardians[guardians.length - 1];
                 break;
             }
-        owners.length -= 1;
-        if (required > owners.length)
-            changeRequirement(owners.length);
-        OwnerRemoval(owner);
+        guardians.length -= 1;
+        if (required > guardians.length)
+            changeRequirement(guardians.length);
+        GuardianRemoval(guardian);
     }
 
     /// @dev Allows to replace an owner with a new owner. Transaction has to be sent by wallet.
-    /// @param owner Address of owner to be replaced.
-    /// @param newOwner Address of new owner.
-    function replaceOwner(address owner, address newOwner)
+    /// @param guardian Address of owner to be replaced.
+    /// @param newGuardian Address of new owner.
+    function replaceGuardian(address guardian, address newGuardian)
         public
         onlyWallet
-        ownerExists(owner)
-        ownerDoesNotExist(newOwner)
+        guardianExists(guardian)
+        guardianDoesNotExist(newGuardian)
     {
-        for (uint i=0; i<owners.length; i++)
-            if (owners[i] == owner) {
-                owners[i] = newOwner;
+        for (uint i=0; i<guardians.length; i++)
+            if (guardians[i] == guardian) {
+                guardians[i] = newGuardian;
                 break;
             }
-        isOwner[owner] = false;
-        isOwner[newOwner] = true;
-        OwnerRemoval(owner);
-        OwnerAddition(newOwner);
+        isGuardian[guardian] = false;
+        isGuardian[newGuardian] = true;
+        GuardianRemoval(guardian);
+        GuardianAddition(newGuardian);
     }
 
     /// @dev Allows to change the number of required confirmations. Transaction has to be sent by wallet.
@@ -175,7 +179,7 @@ contract MultiSigWallet {
     function changeRequirement(uint _required)
         public
         onlyWallet
-        validRequirement(owners.length, _required)
+        validRequirement(guardians.length, _required)
     {
         required = _required;
         RequirementChange(_required);
@@ -198,7 +202,7 @@ contract MultiSigWallet {
     /// @param transactionId Transaction ID.
     function confirmTransaction(uint transactionId)
         public
-        ownerExists(msg.sender)
+        guardianExists(msg.sender)
         transactionExists(transactionId)
         notConfirmed(transactionId, msg.sender)
     {
@@ -211,7 +215,7 @@ contract MultiSigWallet {
     /// @param transactionId Transaction ID.
     function revokeConfirmation(uint transactionId)
         public
-        ownerExists(msg.sender)
+        guardianExists(msg.sender)
         confirmed(transactionId, msg.sender)
         notExecuted(transactionId)
     {
@@ -223,7 +227,7 @@ contract MultiSigWallet {
     /// @param transactionId Transaction ID.
     function executeTransaction(uint transactionId)
         public
-        ownerExists(msg.sender)
+        guardianExists(msg.sender)
         confirmed(transactionId, msg.sender)
         notExecuted(transactionId)
     {
@@ -270,8 +274,8 @@ contract MultiSigWallet {
         returns (bool)
     {
         uint count = 0;
-        for (uint i=0; i<owners.length; i++) {
-            if (confirmations[transactionId][owners[i]])
+        for (uint i=0; i<guardians.length; i++) {
+            if (confirmations[transactionId][guardians[i]])
                 count += 1;
             if (count == required)
                 return true;
@@ -313,8 +317,8 @@ contract MultiSigWallet {
         constant
         returns (uint count)
     {
-        for (uint i=0; i<owners.length; i++)
-            if (confirmations[transactionId][owners[i]])
+        for (uint i=0; i<guardians.length; i++)
+            if (confirmations[transactionId][guardians[i]])
                 count += 1;
     }
 
@@ -335,12 +339,12 @@ contract MultiSigWallet {
 
     /// @dev Returns list of owners.
     /// @return List of owner addresses.
-    function getOwners()
+    function getGuardians()
         public
         constant
         returns (address[])
     {
-        return owners;
+        return guardians;
     }
 
     /// @dev Returns array with owner addresses, which confirmed transaction.
@@ -351,12 +355,12 @@ contract MultiSigWallet {
         constant
         returns (address[] _confirmations)
     {
-        address[] memory confirmationsTemp = new address[](owners.length);
+        address[] memory confirmationsTemp = new address[](guardians.length);
         uint count = 0;
         uint i;
-        for (i=0; i<owners.length; i++)
-            if (confirmations[transactionId][owners[i]]) {
-                confirmationsTemp[count] = owners[i];
+        for (i=0; i<guardians.length; i++)
+            if (confirmations[transactionId][guardians[i]]) {
+                confirmationsTemp[count] = guardians[i];
                 count += 1;
             }
         _confirmations = new address[](count);
