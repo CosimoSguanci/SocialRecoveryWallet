@@ -3,7 +3,7 @@ pragma solidity ^0.4.15;
 
 /// @title Multisignature wallet - Allows multiple parties to agree on transactions before execution.
 /// @author Stefan George - <stefan.george@consensys.net>
-contract MultiSigWallet {
+contract SocialRecoveryWallet {
 
     /*
      *  Events
@@ -18,6 +18,8 @@ contract MultiSigWallet {
     event GuardianRemoval(address indexed guardian);
     event RequirementChange(uint required);
 
+    // recovery of lost keys + avoid loss in case of stolen keys
+
     /*
      *  Constants
      */
@@ -28,12 +30,21 @@ contract MultiSigWallet {
      */
     mapping (uint => Transaction) public transactions;
     mapping (uint => mapping (address => bool)) public confirmations;
+
+    //mapping (address => address) public approvalsChangeSpender;
+    //mapping (address => uint) public approvalsChangeSpenderCount;
+    
+    mapping (uint => mapping (address => bool)) public changeSpenderRequestsConfirmations;
+    mapping (uint => ChangeSpenderRequest) public changeSpenderRequests;
+    mapping (uint => address) public newSpenders;
+    uint public changeSpenderRequestCount;
+
     mapping (address => bool) public isGuardian;
     address[] public guardians;
     uint public required;
     uint public transactionCount;
 
-    address public spender;
+    address public spender; // Who can spend the funds of the Social Recovery Wallet
 
     struct Transaction {
         address destination;
@@ -42,11 +53,22 @@ contract MultiSigWallet {
         bool executed;
     }
 
+    struct ChangeSpenderRequest {
+      address newSpender;
+      bool executed;
+    }
+
     /*
      *  Modifiers
      */
     modifier onlyWallet() {
         require(msg.sender == address(this));
+        _;
+    }
+
+
+    modifier isSpender() {
+        require(msg.sender == spender);
         _;
     }
 
@@ -93,6 +115,22 @@ contract MultiSigWallet {
         _;
     }
 
+    modifier changeSpenderRequestExists(uint changeSpenderRequestId) {
+        require(changeSpenderRequests[changeSpenderRequestId].newSpender != 0);
+        _;
+    }
+
+    
+    modifier changeSpenderRequestConfirmed(uint changeSpenderRequestId, address guardian) {
+        require(changeSpenderRequestsConfirmations[changeSpenderRequestId][guardian]);
+        _;
+    }
+
+    modifier changeSpenderRequestNotExecuted(uint changeSpenderRequestId) {
+        require(!changeSpenderRequests[changeSpenderRequestId].executed);
+        _;
+    }
+
     /// @dev Fallback function allows to deposit ether.
     function()
         payable
@@ -107,12 +145,12 @@ contract MultiSigWallet {
     /// @dev Contract constructor sets initial owners and required number of confirmations.
     /// @param _guardians List of initial owners.
     /// @param _required Number of required confirmations.
-    function MultiSigWallet(address[] _guardians, uint _required)
+    function SocialRecoveryWallet(address[] _guardians, uint _required)
         public
         validRequirement(_guardians.length, _required)
     {
         spender = msg.sender;
-        
+
         for (uint i=0; i<_guardians.length; i++) {
             require(!isGuardian[_guardians[i]] && _guardians[i] != 0);
             isGuardian[_guardians[i]] = true;
@@ -185,6 +223,40 @@ contract MultiSigWallet {
         RequirementChange(_required);
     }
 
+    function addChangeSpenderRequest(address newSpender)
+        internal
+        notNull(newSpender)
+        returns (uint changeSpenderRequestId)
+    {
+        changeSpenderRequestId = changeSpenderRequestCount;
+        changeSpenderRequests[changeSpenderRequestId] = ChangeSpenderRequest({
+            newSpender: newSpender,
+            executed: false
+        });
+        changeSpenderRequestCount += 1;
+        //Submission(transactionId);
+    }
+
+    function submitChangeSpenderRequest(address newSpender)
+        public
+        returns (uint changeSpenderRequestId)
+    {
+        changeSpenderRequestId = addChangeSpenderRequest(newSpender);
+        confirmChangeSpenderRequest(changeSpenderRequestId);
+    }  
+    
+    // notConfirmed(transactionId, msg.sender)
+    function confirmChangeSpenderRequest(uint changeSpenderRequestId)
+        public
+        guardianExists(msg.sender)
+        changeSpenderRequestExists(changeSpenderRequestId)
+    {
+
+        changeSpenderRequestsConfirmations[changeSpenderRequestId][msg.sender] = true;
+        //Confirmation(msg.sender, transactionId);
+        executeChangeSpenderRequest(changeSpenderRequestId, newSpenders[changeSpenderRequestId]);
+    } 
+
     /// @dev Allows an owner to submit and confirm a transaction.
     /// @param destination Transaction target address.
     /// @param value Transaction ether value.
@@ -195,7 +267,7 @@ contract MultiSigWallet {
         returns (uint transactionId)
     {
         transactionId = addTransaction(destination, value, data);
-        confirmTransaction(transactionId);
+        //confirmTransaction(transactionId);
     }
 
     /// @dev Allows an owner to confirm a transaction.
@@ -206,6 +278,7 @@ contract MultiSigWallet {
         transactionExists(transactionId)
         notConfirmed(transactionId, msg.sender)
     {
+
         confirmations[transactionId][msg.sender] = true;
         Confirmation(msg.sender, transactionId);
         executeTransaction(transactionId);
@@ -227,7 +300,7 @@ contract MultiSigWallet {
     /// @param transactionId Transaction ID.
     function executeTransaction(uint transactionId)
         public
-        guardianExists(msg.sender)
+        isSpender()
         confirmed(transactionId, msg.sender)
         notExecuted(transactionId)
     {
@@ -240,6 +313,20 @@ contract MultiSigWallet {
                 ExecutionFailure(transactionId);
                 txn.executed = false;
             }
+        }
+    }
+
+    function executeChangeSpenderRequest(uint changeSpenderRequestId, address newSpender)
+        public
+        guardianExists(msg.sender)
+        changeSpenderRequestConfirmed(changeSpenderRequestId, msg.sender)
+        changeSpenderRequestNotExecuted(changeSpenderRequestId)
+    {
+        if (isChangeSpenderRequestConfirmed(changeSpenderRequestId)) {
+            ChangeSpenderRequest storage req = changeSpenderRequests[changeSpenderRequestId];
+            req.executed = true;
+            
+            spender = newSpender;
         }
     }
 
@@ -276,6 +363,20 @@ contract MultiSigWallet {
         uint count = 0;
         for (uint i=0; i<guardians.length; i++) {
             if (confirmations[transactionId][guardians[i]])
+                count += 1;
+            if (count == required)
+                return true;
+        }
+    }
+
+    function isChangeSpenderRequestConfirmed(uint changeSpenderRequestId)
+        public
+        constant
+        returns (bool)
+    {
+        uint count = 0;
+        for (uint i=0; i<guardians.length; i++) {
+            if (changeSpenderRequestsConfirmations[changeSpenderRequestId][guardians[i]])
                 count += 1;
             if (count == required)
                 return true;
