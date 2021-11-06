@@ -147,6 +147,11 @@ contract SocialRecoveryWalletNew {
         isConfirmed[_txIndex][msg.sender] = true;
 
         emit ConfirmTransaction(msg.sender, _txIndex);
+
+        //if(transaction.numConfirmations >= numConfirmationsRequired) {
+          // should this be automatic as soon as the min number of confirmations is reached, or should it be triggered by spender?
+          //executeTransaction(_txIndex);
+        //}
     }
 
     // TODO only spender? who should call this?
