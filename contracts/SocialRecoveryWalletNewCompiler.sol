@@ -90,7 +90,7 @@ contract SocialRecoveryWalletNew {
     constructor(address _spender, address[] memory _guardians, uint _numConfirmationsRequired, uint _numConfirmationsRequiredToChangeSpender) {
         require(_guardians.length > 0, "guardians required");
         require(
-            _numConfirmationsRequired > 0 &&
+            _numConfirmationsRequired >= 0 &&
                 _numConfirmationsRequired <= _guardians.length,
             "invalid number of required confirmations"
         );
@@ -184,10 +184,10 @@ contract SocialRecoveryWalletNew {
     {
         Transaction storage transaction = transactions[_txIndex];
 
-        /*require(
+        require(
             transaction.numConfirmations >= numConfirmationsRequired,
             "cannot execute tx"
-        );*/
+        );
 
         transaction.executed = true;
 
