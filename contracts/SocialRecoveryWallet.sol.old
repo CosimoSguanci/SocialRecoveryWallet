@@ -31,12 +31,9 @@ contract SocialRecoveryWallet {
     mapping (uint => Transaction) public transactions;
     mapping (uint => mapping (address => bool)) public confirmations;
 
-    //mapping (address => address) public approvalsChangeSpender;
-    //mapping (address => uint) public approvalsChangeSpenderCount;
     
     mapping (uint => mapping (address => bool)) public changeSpenderRequestsConfirmations;
     mapping (uint => ChangeSpenderRequest) public changeSpenderRequests;
-    //mapping (uint => address) public newSpenders;
     uint public changeSpenderRequestCount;
 
     mapping (address => bool) public isGuardian;
