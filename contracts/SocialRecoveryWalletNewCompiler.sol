@@ -1,6 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.3;
 
+/**
+Proposed solutions for vaulting:
+- 2 wallets: 1 saving, 1 checking (daily uses), the latter contains few funds and doesn't neeed guardian approval for transaction execution
+- The savings account by default needs N confirmations for executing a transactions, but has the possibility to have trusted/whitelisted recipients that do not
+  need any guardian approval. Adding an address to the trusted addresses list need the approval by guardians
+- Daily limit could be implemented by making use of block.timestamp
+
+Proposed solution for privacy:
+- hashing guardians addresses
+- merkle proofs
+
+For increased security and enforcing cooperation between owner and guardians
+- User secret data hash needed to change spender key, and it could be biometric secret data
+ */
+
 contract SocialRecoveryWalletNew {
     event Deposit(address indexed sender, uint amount, uint balance);
     event SubmitTransaction(
@@ -18,8 +33,12 @@ contract SocialRecoveryWalletNew {
     mapping(address => bool) public isGuardian;
     uint public numConfirmationsRequired; // Transactions
     uint public numConfirmationsRequiredToChangeSpender;
+    uint public numConfirmationsRequiredToAddTrustedAddress;
 
     address public spender; // Who can spend the funds of the Social Recovery Wallet
+
+    //address[] public trustedAddresses;
+    mapping(address => bool) public isTrustedAddress;
 
     struct Transaction {
         address to;
@@ -35,6 +54,12 @@ contract SocialRecoveryWalletNew {
       uint numConfirmations;
     }
 
+    struct AddTrustedAddressRequest {
+      address newTrustedAddress;
+      bool executed;
+      uint numConfirmations;
+    }
+
     // mapping from tx index => guardian => bool
     mapping(uint => mapping(address => bool)) public isConfirmed; // regards TRANSACTIONS
 
@@ -44,6 +69,11 @@ contract SocialRecoveryWalletNew {
     mapping(uint => mapping(address => bool)) public isChangeSpenderRequestConfirmed; // regards CHANGE SPENDER REQUESTS
 
     ChangeSpenderRequest[] public changeSpenderRequests;
+
+    // mapping from add trusted addr req index => guardian => bool
+    mapping(uint => mapping(address => bool)) public isAddTrustedAddressRequestConfirmed; // regards CHANGE SPENDER REQUESTS
+
+    AddTrustedAddressRequest[] public addTrustedAddressRequests;
 
     modifier onlyGuardian() {
         require(isGuardian[msg.sender], "not guardian");
@@ -87,7 +117,23 @@ contract SocialRecoveryWalletNew {
         _;
     }
 
-    constructor(address _spender, address[] memory _guardians, uint _numConfirmationsRequired, uint _numConfirmationsRequiredToChangeSpender) {
+    // modifiers regarding ADD TRUSTED ADDRESS REQs
+    modifier addTrustedAddressRequestExists(uint _reqIndex) {
+        require(_reqIndex < addTrustedAddressRequests.length, "add trusted address req does not exist");
+        _;
+    }
+
+    modifier addTrustedAddressRequestNotExecuted(uint _reqIndex) {
+        require(!addTrustedAddressRequests[_reqIndex].executed, "add trusted address req already executed");
+        _;
+    }
+
+    modifier addTrustedAddressRequestNotConfirmed(uint _reqIndex) {
+        require(!isAddTrustedAddressRequestConfirmed[_reqIndex][msg.sender], "add trusted address already confirmed");
+        _;
+    }
+
+    constructor(address _spender, address[] memory _guardians, uint _numConfirmationsRequired, uint _numConfirmationsRequiredToChangeSpender, uint _numConfirmationsRequiredToAddTrustedAddress) {
         require(_guardians.length > 0, "guardians required");
         require(
             _numConfirmationsRequired >= 0 &&
@@ -108,6 +154,7 @@ contract SocialRecoveryWalletNew {
         spender = _spender;
         numConfirmationsRequired = _numConfirmationsRequired;
         numConfirmationsRequiredToChangeSpender = _numConfirmationsRequiredToChangeSpender;
+        numConfirmationsRequiredToAddTrustedAddress = _numConfirmationsRequiredToAddTrustedAddress;
     }
 
     receive() external payable {
@@ -190,7 +237,7 @@ contract SocialRecoveryWalletNew {
         Transaction storage transaction = transactions[_txIndex];
 
         require(
-            transaction.numConfirmations >= numConfirmationsRequired,
+            transaction.numConfirmations >= numConfirmationsRequired || isTrustedAddress[transaction.to],
             "cannot execute tx"
         );
 
@@ -295,6 +342,92 @@ contract SocialRecoveryWalletNew {
 
        //emit RevokeConfirmation(msg.sender, _reqIndex);
     }
+
+    // Functions related to ADD TRUSTED ADDRESSES REQUESTS
+
+    function submitAddTrustedAddressRequest(
+        address _newTrustedAddress
+    ) public onlySpender {
+        uint reqIndex = addTrustedAddressRequests.length;
+
+        addTrustedAddressRequests.push(
+            AddTrustedAddressRequest({
+                newTrustedAddress: _newTrustedAddress,
+                executed: false,
+                numConfirmations: 0
+            })
+        );
+        
+        //isChangeSpenderRequestConfirmed[_reqIndex][msg.sender] = true;
+        
+        //emit SubmitTransaction(msg.sender, txIndex, _to, _value, _data);
+    }
+
+    function confirmAddTrustedAddressRequest(uint _reqIndex)
+        public
+        onlyGuardian
+        addTrustedAddressRequestExists(_reqIndex)
+        addTrustedAddressRequestNotExecuted(_reqIndex)
+        addTrustedAddressRequestNotConfirmed(_reqIndex)
+    {
+        AddTrustedAddressRequest storage req = addTrustedAddressRequests[_reqIndex];
+        req.numConfirmations += 1;
+        isAddTrustedAddressRequestConfirmed[_reqIndex][msg.sender] = true;
+        
+        if(req.numConfirmations >= numConfirmationsRequiredToAddTrustedAddress) {
+            executeAddTrustedAddressRequest(_reqIndex);
+        }
+
+        //emit ConfirmTransaction(msg.sender, _txIndex);
+    }
+
+    function executeAddTrustedAddressRequest(uint _reqIndex) 
+        private 
+        onlyGuardian 
+        addTrustedAddressRequestExists(_reqIndex)
+        addTrustedAddressRequestNotExecuted(_reqIndex)
+    {
+        AddTrustedAddressRequest storage req = addTrustedAddressRequests[_reqIndex];
+
+        require(
+            req.numConfirmations >= numConfirmationsRequiredToAddTrustedAddress,
+            "cannot execute add trusted address req"
+        );
+
+        req.executed = true;
+
+        //trustedAddresses.push(req.newTrustedAddress);
+        isTrustedAddress[req.newTrustedAddress] = true; // TODO: add function to untrust an address
+        
+        //emit ExecuteTransaction(msg.sender, _txIndex);
+    }
+
+    function removeTrustedAddress(address _trusted) 
+        public 
+        onlySpender 
+    {
+        isTrustedAddress[_trusted] = false;
+    }
+
+
+    function revokeAddTrustedAddressRequestConfirmation(uint _reqIndex)
+        public
+        onlyGuardian
+        addTrustedAddressRequestExists(_reqIndex)
+        addTrustedAddressRequestNotExecuted(_reqIndex)
+    {
+        AddTrustedAddressRequest storage req = addTrustedAddressRequests[_reqIndex];
+
+        require(isAddTrustedAddressRequestConfirmed[_reqIndex][msg.sender], "add trusted address not confirmed");
+
+        req.numConfirmations -= 1;
+        isAddTrustedAddressRequestConfirmed[_reqIndex][msg.sender] = false;
+
+       //emit RevokeConfirmation(msg.sender, _reqIndex);
+    }
+    
+
+    ///////////
 
     function getGuardians() public view returns (address[] memory) {
         return guardians;
