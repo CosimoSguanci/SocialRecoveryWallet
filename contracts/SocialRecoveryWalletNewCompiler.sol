@@ -256,7 +256,7 @@ contract SocialRecoveryWalletNew {
     }
 
     function executeChangeSpenderRequest(uint _reqIndex) 
-        public 
+        private 
         onlyGuardian 
         changeSpenderRequestExists(_reqIndex)
         changeSpenderRequestNotExecuted(_reqIndex)
