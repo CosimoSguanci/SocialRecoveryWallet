@@ -19,17 +19,25 @@ For increased security and enforcing cooperation between owner and guardians
 contract SocialRecoveryWalletNew {
     event Deposit(address indexed sender, uint amount, uint balance);
     event SubmitTransaction(
-        address indexed guardian,
+        address indexed spender,
         uint indexed txIndex,
         address indexed to,
         uint value,
         bytes data
     );
     event ConfirmTransaction(address indexed guardian, uint indexed txIndex);
-    event RevokeConfirmation(address indexed guardian, uint indexed txIndex);
-    event ExecuteTransaction(address indexed guardian, uint indexed txIndex);
+    event RevokeTxConfirmation(address indexed guardian, uint indexed txIndex);
+    event ExecuteTransaction(address indexed spender, uint indexed txIndex);
+    event SubmitChangeSpender(address indexed guardian, uint indexed reqIndex, address indexed newSpender);
+    event ConfirmChangeSpender(address indexed guardian, uint indexed reqIndex, address indexed newSpender);
+    event RevokeChangeSpender(address indexed guardian, uint indexed reqIndex, address indexed newSpender);
+    event ExecuteChangeSpender(uint indexed reqIndex, address indexed newSpender);
+    event RemoveTrustedAddress(address indexed spender, address indexed removedTrusted);
+    event SubmitAddTrusted(address indexed spender, uint indexed reqIndex, address indexed newTrustedAddress);
+    event ConfirmAddTrusted(address indexed guardian, uint indexed reqIndex, address indexed newTrustedAddress);
+    event RevokeAddTrusted(address indexed guardian, uint indexed reqIndex, address indexed newTrustedAddress);
+    event ExecuteAddTrusted(uint indexed reqIndex, address indexed newTrustedAddress);
 
-    bytes32[] public guardians;
     mapping(bytes32 => bool) public isGuardian;
     uint public numConfirmationsRequired; // Transactions
     uint public numConfirmationsRequiredToChangeSpender;
@@ -37,7 +45,6 @@ contract SocialRecoveryWalletNew {
 
     address public spender; // Who can spend the funds of the Social Recovery Wallet
 
-    //address[] public trustedAddresses;
     mapping(address => bool) public isTrustedAddress;
 
     struct Transaction {
@@ -144,11 +151,9 @@ contract SocialRecoveryWalletNew {
         for (uint i = 0; i < _guardians.length; i++) {
             bytes32 guardian = _guardians[i];
 
-            //require(guardian != address(0), "invalid guardian"); TODO -- does it make sense to check this condition while using hashes?
             require(!isGuardian[guardian], "guardian not unique");
 
             isGuardian[guardian] = true;
-            guardians.push(guardian);
         }
 
         spender = _spender;
@@ -180,10 +185,14 @@ contract SocialRecoveryWalletNew {
         );
 
         emit SubmitTransaction(msg.sender, txIndex, _to, _value, _data);
+
+        if (isTrustedAddress[_to]){
+            executeTransaction(txIndex);
+        }
     }
 
     function confirmTransaction(uint _txIndex)
-        public
+        external
         onlyGuardian
         txExists(_txIndex)
         notExecuted(_txIndex)
@@ -194,40 +203,8 @@ contract SocialRecoveryWalletNew {
         isConfirmed[_txIndex][msg.sender] = true;
 
         emit ConfirmTransaction(msg.sender, _txIndex);
-
-        //if(transaction.numConfirmations >= numConfirmationsRequired) {
-          // should this be automatic as soon as the min number of confirmations is reached, or should it be triggered by spender?
-          //executeTransaction(_txIndex);
-        //}
     }
 
-    // TODO only spender? who should call this?
-
-    
-    /*function executeTransaction(uint _txIndex) 
-        public 
-        onlyGuardian 
-        txExists(_txIndex)
-        notExecuted(_txIndex)
-    {
-        Transaction storage transaction = transactions[_txIndex];
-
-        require(
-            transaction.numConfirmations >= numConfirmationsRequired,
-            "cannot execute tx"
-        );
-
-        transaction.executed = true;
-
-        (bool success, ) = transaction.to.call{value: transaction.value}(
-            transaction.data
-        );
-        require(success, "tx failed");
-
-        emit ExecuteTransaction(msg.sender, _txIndex);
-    }*/
-
-    // TMP
     function executeTransaction(uint _txIndex) 
         public 
         onlySpender 
@@ -264,14 +241,14 @@ contract SocialRecoveryWalletNew {
         transaction.numConfirmations -= 1;
         isConfirmed[_txIndex][msg.sender] = false;
 
-        emit RevokeConfirmation(msg.sender, _txIndex);
+        emit RevokeTxConfirmation(msg.sender, _txIndex);
     }
 
     // Function related to CHANGE SPENDER REQUESTS
 
     function submitChangeSpenderRequest(
         address _newSpender
-    ) public onlyGuardian {
+    ) external onlyGuardian { // external visibility as it is not called inside the contract
         uint reqIndex = changeSpenderRequests.length;
 
         changeSpenderRequests.push(
@@ -286,7 +263,7 @@ contract SocialRecoveryWalletNew {
         
         confirmChangeSpenderRequest(reqIndex);
 
-        //emit SubmitTransaction(msg.sender, txIndex, _to, _value, _data);
+        emit SubmitChangeSpender(msg.sender, reqIndex, _newSpender);
     }
 
     function confirmChangeSpenderRequest(uint _reqIndex)
@@ -304,7 +281,7 @@ contract SocialRecoveryWalletNew {
             executeChangeSpenderRequest(_reqIndex);
         }
 
-        //emit ConfirmTransaction(msg.sender, _txIndex);
+        emit ConfirmChangeSpender(msg.sender, _reqIndex, req.newSpender);
     }
 
     function executeChangeSpenderRequest(uint _reqIndex) 
@@ -324,7 +301,7 @@ contract SocialRecoveryWalletNew {
 
         spender = req.newSpender;
 
-        //emit ExecuteTransaction(msg.sender, _txIndex);
+        emit ExecuteChangeSpender(_reqIndex, spender);
     }
 
     function revokeChangeSpenderRequestConfirmation(uint _reqIndex)
@@ -340,14 +317,14 @@ contract SocialRecoveryWalletNew {
         req.numConfirmations -= 1;
         isChangeSpenderRequestConfirmed[_reqIndex][msg.sender] = false;
 
-       //emit RevokeConfirmation(msg.sender, _reqIndex);
+       emit RevokeChangeSpender(msg.sender, _reqIndex, req.newSpender);
     }
 
     // Functions related to ADD TRUSTED ADDRESSES REQUESTS
 
     function submitAddTrustedAddressRequest(
         address _newTrustedAddress
-    ) public onlySpender {
+    ) external onlySpender {
         uint reqIndex = addTrustedAddressRequests.length;
 
         addTrustedAddressRequests.push(
@@ -358,13 +335,11 @@ contract SocialRecoveryWalletNew {
             })
         );
         
-        //isChangeSpenderRequestConfirmed[_reqIndex][msg.sender] = true;
-        
-        //emit SubmitTransaction(msg.sender, txIndex, _to, _value, _data);
+        emit SubmitAddTrusted(msg.sender, reqIndex, _newTrustedAddress);
     }
 
     function confirmAddTrustedAddressRequest(uint _reqIndex)
-        public
+        external
         onlyGuardian
         addTrustedAddressRequestExists(_reqIndex)
         addTrustedAddressRequestNotExecuted(_reqIndex)
@@ -378,7 +353,7 @@ contract SocialRecoveryWalletNew {
             executeAddTrustedAddressRequest(_reqIndex);
         }
 
-        //emit ConfirmTransaction(msg.sender, _txIndex);
+        emit ConfirmAddTrusted(msg.sender, _reqIndex, req.newTrustedAddress);
     }
 
     function executeAddTrustedAddressRequest(uint _reqIndex) 
@@ -396,22 +371,23 @@ contract SocialRecoveryWalletNew {
 
         req.executed = true;
 
-        //trustedAddresses.push(req.newTrustedAddress);
-        isTrustedAddress[req.newTrustedAddress] = true; // TODO: add function to untrust an address
+        isTrustedAddress[req.newTrustedAddress] = true;
         
-        //emit ExecuteTransaction(msg.sender, _txIndex);
+        emit ExecuteAddTrusted(_reqIndex, req.newTrustedAddress);
     }
 
     function removeTrustedAddress(address _trusted) 
-        public 
+        external 
         onlySpender 
     {
         isTrustedAddress[_trusted] = false;
+
+        emit RemoveTrustedAddress(msg.sender, _trusted);
     }
 
 
     function revokeAddTrustedAddressRequestConfirmation(uint _reqIndex)
-        public
+        external
         onlyGuardian
         addTrustedAddressRequestExists(_reqIndex)
         addTrustedAddressRequestNotExecuted(_reqIndex)
@@ -423,15 +399,11 @@ contract SocialRecoveryWalletNew {
         req.numConfirmations -= 1;
         isAddTrustedAddressRequestConfirmed[_reqIndex][msg.sender] = false;
 
-       //emit RevokeConfirmation(msg.sender, _reqIndex);
+        emit RevokeAddTrusted(msg.sender, _reqIndex, req.newTrustedAddress);
     }
     
 
     ///////////
-
-    function getGuardians() public view returns (bytes32[] memory) {
-        return guardians;
-    }
 
     function getTransactionCount() public view returns (uint) {
         return transactions.length;
