@@ -29,8 +29,8 @@ contract SocialRecoveryWalletNew {
     event RevokeConfirmation(address indexed guardian, uint indexed txIndex);
     event ExecuteTransaction(address indexed guardian, uint indexed txIndex);
 
-    address[] public guardians;
-    mapping(address => bool) public isGuardian;
+    bytes32[] public guardians;
+    mapping(bytes32 => bool) public isGuardian;
     uint public numConfirmationsRequired; // Transactions
     uint public numConfirmationsRequiredToChangeSpender;
     uint public numConfirmationsRequiredToAddTrustedAddress;
@@ -76,12 +76,12 @@ contract SocialRecoveryWalletNew {
     AddTrustedAddressRequest[] public addTrustedAddressRequests;
 
     modifier onlyGuardian() {
-        require(isGuardian[msg.sender], "not guardian");
+        require(isGuardian[keccak256(abi.encodePacked(msg.sender))], "not guardian");
         _;
     }
 
     modifier onlySpender() {
-        require(spender == msg.sender, "not guardian");
+        require(spender == msg.sender, "not spender");
         _;
     }
 
@@ -133,7 +133,7 @@ contract SocialRecoveryWalletNew {
         _;
     }
 
-    constructor(address _spender, address[] memory _guardians, uint _numConfirmationsRequired, uint _numConfirmationsRequiredToChangeSpender, uint _numConfirmationsRequiredToAddTrustedAddress) {
+    constructor(address _spender, bytes32[] memory _guardians, uint _numConfirmationsRequired, uint _numConfirmationsRequiredToChangeSpender, uint _numConfirmationsRequiredToAddTrustedAddress) {
         require(_guardians.length > 0, "guardians required");
         require(
             _numConfirmationsRequired >= 0 &&
@@ -142,9 +142,9 @@ contract SocialRecoveryWalletNew {
         );
 
         for (uint i = 0; i < _guardians.length; i++) {
-            address guardian = _guardians[i];
+            bytes32 guardian = _guardians[i];
 
-            require(guardian != address(0), "invalid guardian");
+            //require(guardian != address(0), "invalid guardian"); TODO -- does it make sense to check this condition while using hashes?
             require(!isGuardian[guardian], "guardian not unique");
 
             isGuardian[guardian] = true;
@@ -429,7 +429,7 @@ contract SocialRecoveryWalletNew {
 
     ///////////
 
-    function getGuardians() public view returns (address[] memory) {
+    function getGuardians() public view returns (bytes32[] memory) {
         return guardians;
     }
 
