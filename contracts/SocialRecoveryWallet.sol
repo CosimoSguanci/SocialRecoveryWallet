@@ -140,7 +140,7 @@ contract SocialRecoveryWalletNew {
         _;
     }
 
-    constructor(address _spender, bytes32[] memory _guardians, uint _numConfirmationsRequired, uint _numConfirmationsRequiredToChangeSpender, uint _numConfirmationsRequiredToAddTrustedAddress) {
+    constructor(address _spender, bytes32[] memory _guardians, address[] memory _trustedAddresses, uint _numConfirmationsRequired, uint _numConfirmationsRequiredToChangeSpender, uint _numConfirmationsRequiredToAddTrustedAddress) {
         require(_guardians.length > 0, "guardians required");
         require(
             _numConfirmationsRequired >= 0 &&
@@ -154,6 +154,10 @@ contract SocialRecoveryWalletNew {
             require(!isGuardian[guardian], "guardian not unique");
 
             isGuardian[guardian] = true;
+        }
+
+        for (uint i = 0; i < _trustedAddresses.length; i++){
+            isTrustedAddress[_trustedAddresses[i]] = true;
         }
 
         spender = _spender;
@@ -258,8 +262,6 @@ contract SocialRecoveryWalletNew {
                 numConfirmations: 0
             })
         );
-        
-        //isChangeSpenderRequestConfirmed[_reqIndex][msg.sender] = true;
         
         confirmChangeSpenderRequest(reqIndex);
 
