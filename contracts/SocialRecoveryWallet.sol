@@ -144,7 +144,11 @@ contract SocialRecoveryWalletNew {
         require(_guardians.length > 0, "guardians required");
         require(
             _numConfirmationsRequired >= 0 &&
-                _numConfirmationsRequired <= _guardians.length,
+                _numConfirmationsRequired <= _guardians.length &&
+                _numConfirmationsRequiredToChangeSpender >= 0 &&
+                _numConfirmationsRequiredToChangeSpender <= _guardians.length &&
+                _numConfirmationsRequiredToAddTrustedAddress >= 0 &&
+                _numConfirmationsRequiredToAddTrustedAddress <= _guardians.length,
             "invalid number of required confirmations"
         );
 
