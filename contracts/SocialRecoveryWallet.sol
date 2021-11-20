@@ -16,7 +16,7 @@ For increased security and enforcing cooperation between owner and guardians
 - User secret data hash needed to change spender key, and it could be biometric secret data
  */
 
-contract SocialRecoveryWalletNew {
+contract SocialRecoveryWallet {
     event Deposit(address indexed sender, uint amount, uint balance);
     event SubmitTransaction(
         address indexed spender,
