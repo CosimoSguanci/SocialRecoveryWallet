@@ -1,6 +1,6 @@
 const SocialRecoveryWallet = artifacts.require("SocialRecoveryWallet");
 
-contract("SocialRecoveryWalletDeployment", async accounts => {
+contract("SocialRecoveryWalletDeployment", () => {
 
   it('Should deploy smart contract properly', async () => {
     const socialRecoveryWalletNew = await SocialRecoveryWallet.deployed();
